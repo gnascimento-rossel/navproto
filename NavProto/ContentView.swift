@@ -9,9 +9,12 @@ import NavigatorUI
 import SwiftUI
 
 struct ContentView: View {
+    @State private var selectedTab: AppTab = .today
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             ArticleFeedView(
+                tab: .today,
                 title: "Top Stories",
                 stackName: "top-stories",
                 articles: Article.sampleTopStories
@@ -19,8 +22,10 @@ struct ContentView: View {
             .tabItem {
                 Label("Today", systemImage: "newspaper")
             }
+            .tag(AppTab.today)
 
             ArticleFeedView(
+                tab: .tech,
                 title: "Technology",
                 stackName: "technology",
                 articles: Article.sampleTechnology
@@ -28,8 +33,10 @@ struct ContentView: View {
             .tabItem {
                 Label("Tech", systemImage: "desktopcomputer")
             }
+            .tag(AppTab.tech)
 
             ArticleFeedView(
+                tab: .saved,
                 title: "Saved Reads",
                 stackName: "saved-reads",
                 articles: Article.sampleSaved
@@ -37,27 +44,111 @@ struct ContentView: View {
             .tabItem {
                 Label("Saved", systemImage: "bookmark")
             }
+            .tag(AppTab.saved)
         }
+        .onNavigationReceive(assign: $selectedTab, delay: 0.5)
     }
 }
 
 private struct ArticleFeedView: View {
+    let tab: AppTab
     let title: String
     let stackName: String
     let articles: [Article]
 
     var body: some View {
         ManagedNavigationStack(name: stackName) { navigator in
-            List(articles) { article in
-                ArticleRow(article: article) {
-                    navigator.navigate(to: ArticleDestination.article(article))
+            List {
+                Section {
+                    FeedDemoCard(
+                        currentTab: tab,
+                        onPresentFromRoot: {
+                            navigator.root.navigate(to: AppDestination.briefing(tab: tab))
+                        },
+                        onSwitchTab: {
+                            navigator.send(tab.secondaryDemoTab)
+                        }
+                    )
+                    .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 14, trailing: 20))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
                 }
-                .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+
+                ForEach(articles) { article in
+                    ArticleRow(article: article) {
+                        navigator.navigate(to: ArticleDestination.article(article))
+                    }
+                    .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
             }
             .listStyle(.plain)
             .navigationTitle(title)
+        }
+    }
+}
+
+private struct FeedDemoCard: View {
+    let currentTab: AppTab
+    let onPresentFromRoot: () -> Void
+    let onSwitchTab: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Navigator demos")
+                .font(.headline)
+
+            Text("These buttons use the shared app navigator instead of only the current tab stack.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Button(action: onPresentFromRoot) {
+                demoButtonLabel(
+                    title: "Present from app root",
+                    subtitle: "Opens a managed sheet from the root navigator."
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onSwitchTab) {
+                demoButtonLabel(
+                    title: "Switch to \(currentTab.secondaryDemoTab.title)",
+                    subtitle: "Broadcasts a tab selection through navigator.send(...)."
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.quaternary.opacity(0.45))
+        }
+    }
+
+    @ViewBuilder
+    private func demoButtonLabel(title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "arrow.right.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.blue)
+        }
+        .padding(14)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.background)
         }
     }
 }
@@ -229,6 +320,39 @@ private struct AuthorDetailView: View {
     }
 }
 
+private struct AppBriefingView: View {
+    @Environment(\.navigator) private var navigator
+
+    let tab: AppTab
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Root-level presentation")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+
+            Text("App-wide briefing")
+                .font(.largeTitle.bold())
+
+            Text("This sheet was presented by `navigator.root`, so it sits above the entire tab interface instead of belonging to just the \(tab.title) stack.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .lineSpacing(5)
+
+            Button("Dismiss") {
+                navigator.back()
+            }
+            .buttonStyle(.borderedProminent)
+
+            Spacer()
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .navigationTitle("Briefing")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct Article: Identifiable, Hashable {
     let id = UUID()
     let title: String
@@ -249,6 +373,36 @@ private struct AuthorProfile: Hashable, Identifiable {
 
     var id: String {
         name
+    }
+}
+
+private enum AppTab: String, Hashable {
+    case today
+    case tech
+    case saved
+}
+
+private extension AppTab {
+    var title: String {
+        switch self {
+        case .today:
+            "Today"
+        case .tech:
+            "Tech"
+        case .saved:
+            "Saved"
+        }
+    }
+
+    var secondaryDemoTab: AppTab {
+        switch self {
+        case .today:
+            .saved
+        case .tech:
+            .today
+        case .saved:
+            .tech
+        }
     }
 }
 
@@ -291,6 +445,10 @@ private enum ArticleDestination: Hashable {
     case author(AuthorProfile)
 }
 
+private enum AppDestination: Hashable {
+    case briefing(tab: AppTab)
+}
+
 extension ArticleDestination: NavigationDestination {
     var body: some View {
         switch self {
@@ -308,6 +466,27 @@ extension ArticleDestination: NavigationDestination {
         case .author:
             .push
         }
+    }
+}
+
+extension AppDestination: NavigationDestination {
+    var body: some View {
+        switch self {
+        case .briefing(let tab):
+            AppBriefingView(tab: tab)
+        }
+    }
+
+    var method: NavigationMethod {
+        .managedSheet
+    }
+
+    var detents: Set<PresentationDetent> {
+        [.medium, .large]
+    }
+
+    var selectedDetent: PresentationDetent? {
+        .medium
     }
 }
 
